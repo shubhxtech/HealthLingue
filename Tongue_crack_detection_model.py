@@ -7,9 +7,7 @@ from skimage.morphology import skeletonize, erosion, disk
 from skimage import img_as_ubyte
 from skimage.exposure import rescale_intensity
 from scipy.ndimage import distance_transform_edt
-import uuid
 
-OUTPUT_DIR = "output"
 
 # --- Crack Metrics Calculation Functions ---
 def calculate_length(contour):
@@ -21,6 +19,11 @@ def calculate_width(contour):
 
 def calculate_score(num_cracks, total_length, avg_width, w1=1, w2=0.5, w3=0.7):
     return w1 * num_cracks + w2 * total_length + w3 * avg_width
+
+def show_heatmap_overlay(original, frangi_scaled):
+    heatmap = cv2.applyColorMap(frangi_scaled, cv2.COLORMAP_JET)
+    overlay = cv2.addWeighted(cv2.resize(original, (256, 256)), 0.6, heatmap, 0.4, 0)
+    return overlay
 
 
 def detect_tongue_cracks_advanced(image_path):
@@ -39,6 +42,8 @@ def detect_tongue_cracks_advanced(image_path):
     cv2.grabCut(image, mask, rect, bgdModel, fgdModel, 5, cv2.GC_INIT_WITH_RECT)
     mask2 = np.where((mask == 2) | (mask == 0), 0, 1).astype('uint8')
     segmented = image * mask2[:, :, np.newaxis]
+    segmented = np.full_like(image, 255)  # Ensure the background is white
+    segmented[mask2 == 1] = image[mask2 == 1]
 
     # Step 3: Convert to grayscale
     gray = cv2.cvtColor(segmented, cv2.COLOR_BGR2GRAY)
@@ -46,7 +51,7 @@ def detect_tongue_cracks_advanced(image_path):
     # Step 4: Erode the tongue mask to reduce edge effects
     mask_eroded = erosion(mask2, disk(10))
     gray_eroded = gray.copy()
-    gray_eroded[mask_eroded == 0] = 0
+    gray_eroded[mask_eroded == 0] = 255  # Set background to white
 
     # Step 5: CLAHE
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
@@ -103,20 +108,36 @@ def detect_tongue_cracks_advanced(image_path):
     score = score/100 
     score = min(10, max(0, score))  # Ensure score is between 0 and 10
     score = round(score, 2)
+
     # Output
     print(f"Number of Cracks: {num_cracks}")
     print(f"Total Length of Cracks: {total_length:.2f}")
     print(f"Average Width of Cracks: {avg_width:.2f}")
     print(f"Crack Severity Score: {score}")
-    # call visualization function
-    morph_path = os.path.join(OUTPUT_DIR, f"cracks_morph_{uuid.uuid4()}.png")
-    cv2.imwrite(morph_path, morph)  
-    # visualization(segmented, gray_eroded, morph, final_midline, contour_display)
-    return {"morph": morph_path, "score": score}
+    
+    # Call visualization function
+    overlay = show_heatmap_overlay(image, morph)
 
+    return_dict = {
+        "original": image,
+        "segmented": segmented,
+        "gray_eroded": gray_eroded,
+        "morph": morph,
+        "final_midline": final_midline,
+        "contour_display": contour_display,
+        "overlay": overlay,
+        "num_cracks": num_cracks,
+        "total_length": total_length,
+        "avg_width": avg_width,
+        "score": score,
+        "contours": contours
+    }
+    # visualization(segmented, gray_eroded, morph, final_midline, contour_display,overlay)
 
+    return return_dict
 
-def visualization(segmented, gray_eroded, morph, final_midline, contour_display):
+def visualization(segmented, gray_eroded, morph, final_midline, contour_display,overlay):
+    # Display all images with white background
     plt.figure(figsize=(15, 8))
 
     plt.subplot(2, 3, 1)
@@ -144,18 +165,23 @@ def visualization(segmented, gray_eroded, morph, final_midline, contour_display)
     plt.imshow(cv2.cvtColor(contour_display, cv2.COLOR_BGR2RGB))
     plt.axis("off")
 
+    plt.subplot(2, 3, 6)
+    plt.title("Overlay with Heatmap")
+    plt.imshow(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
+    plt.imshow(cv2.cvtColor(contour_display, cv2.COLOR_BGR2RGB), alpha=0.5)
+    plt.axis("off")
+
     plt.tight_layout()
     plt.show()
 
 
-
 # --- Run on Single Image for Now ---
-for i in range(13,14):
-    # image_path = f"test{i}.jpg"  # Replace with your image path
-    image_path = f"images.jpeg"  # Replace with your image path
+for i in range(13, 14):
+    image_path = f"images/test3.jpg"  # Replace with your image path
     print(f"Processing {image_path}...")
-    results,score = detect_tongue_cracks_advanced(image_path)
+    results, score = work(image_path)
     print("Crack Severity Score:", score)
+
     # Save the results if needed
     # output_path = f"output_{i}.png"
     # cv2.imwrite(output_path, results)

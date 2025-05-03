@@ -343,8 +343,10 @@ async def analyze_tongue(file: UploadFile = File(...)):
         # Step 4: Analyze papillae (using the original saved file)
         papillae_results = analyze_papillae(segmented_path)
         redness = papillae_results["avg_redness"]*10
-        score_cracked = detect_tongue_cracks_advanced(segmented_path)
+        result_cracked = detect_tongue_cracks_advanced(segmented_path)
+        score_cracked = {"morph": result_cracked["overlay"], "score": result_cracked["score"]}
         # Prepare response
+        # score_cracked = {result_cracked["score"]
         response = {
             "Jaggedness" : "25",
             "Cracks" : score_cracked,
