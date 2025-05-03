@@ -7,6 +7,7 @@ import pandas as pd
 
 class TonguePapillaeAnalyzer:
     """
+    minor change
     Class for analyzing tongue images to detect papillae size and redness in local patches.
     """
     
