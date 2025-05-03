@@ -1,31 +1,10 @@
+#comment down plot funcs. and modify it according to you wanna access
 import cv2
 import numpy as np
+import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter1d
 from skimage.morphology import opening, closing, disk, remove_small_holes
 from skimage.filters import threshold_otsu
-import requests  # Import requests for fetching Jaggedness from the server
-
-# Function to get Jaggedness from FastAPI server
-def get_jaggedness():
-    try:
-        # URL of the FastAPI server where the /jaggedness endpoint is exposed
-        response = requests.get("http://127.0.0.1:5000/jaggedness")  # Update this URL if your server is running elsewhere
-
-        if response.status_code == 200:
-            data = response.json()
-            jaggedness = data.get("Jaggedness", None)  # Retrieve the value from the JSON response
-            if jaggedness is not None:
-                print(f"Jaggedness Value: {jaggedness}")
-                return jaggedness
-            else:
-                print("Jaggedness value not found in response.")
-                return None
-        else:
-            print(f"Failed to retrieve jaggedness. Status code: {response.status_code}")
-            return None
-    except Exception as e:
-        print(f"Error occurred while fetching jaggedness: {str(e)}")
-        return None
 
 # Graham Scan Algorithm to compute the convex hull
 def graham_scan(points):
@@ -139,39 +118,29 @@ def compute_and_plot_major_dents_concavity(image_path, r1=3, r2=3, A_max=64, sig
     # Calculate the perimeter score
     perimeter_score = 1 - (P_blue / P_red)
 
-    # Get Jaggedness value from the FastAPI server
-    jaggedness = get_jaggedness()
+    # Plotting the original, smoothed red, and green segments
+    plt.figure(figsize=(10, 10))
+    plt.imshow(mask, cmap='gray')
+    plt.plot(xs, ys, 'r-', linewidth=2, label="Original Red Segment")  # Original red contour
+    plt.plot(xs_smooth, ys_smooth, 'b-', linestyle='--', linewidth=2, label="Smoothed Red Segment")  # Smoothed red contour
+    plt.plot(xs_green, ys_green, 'g-', linestyle='-', linewidth=2, label="Green Smoothed Segment (sigma=5)")  # Green contour
 
-    # If Jaggedness value is available, adjust the final score based on it
-    if jaggedness is not None:
-        final_jagged_score = (perimeter_score * 10) + major_dent_count + jaggedness
-    else:
-        final_jagged_score = (perimeter_score * 10) + major_dent_count
+    # Display top-left, top-right, and bottom points
+    plt.plot(top_left[0], top_left[1], 'bo')
+    plt.text(top_left[0] + 3, top_left[1], "Top-Left", color='blue', fontsize=9)
+    plt.plot(top_right[0], top_right[1], 'bo')
+    plt.text(top_right[0] + 3, top_right[1], "Top-Right", color='blue', fontsize=9)
+    plt.plot(bottom[0], bottom[1], 'bo')
+    plt.text(bottom[0] + 3, bottom[1], "Bottom", color='blue', fontsize=9)
 
-    # Commented out the plotting section
-    # plt.figure(figsize=(10, 10))
-    # plt.imshow(mask, cmap='gray')
-    # plt.plot(xs, ys, 'r-', linewidth=2, label="Original Red Segment")  # Original red contour
-    # plt.plot(xs_smooth, ys_smooth, 'b-', linestyle='--', linewidth=2, label="Smoothed Red Segment")  # Smoothed red contour
-    # plt.plot(xs_green, ys_green, 'g-', linestyle='-', linewidth=2, label="Green Smoothed Segment (sigma=5)")  # Green contour
-    #
-    # # Display top-left, top-right, and bottom points
-    # plt.plot(top_left[0], top_left[1], 'bo')
-    # plt.text(top_left[0] + 3, top_left[1], "Top-Left", color='blue', fontsize=9)
-    # plt.plot(top_right[0], top_right[1], 'bo')
-    # plt.text(top_right[0] + 3, top_right[1], "Top-Right", color='blue', fontsize=9)
-    # plt.plot(bottom[0], bottom[1], 'bo')
-    # plt.text(bottom[0] + 3, bottom[1], "Bottom", color='blue', fontsize=9)
-    #
-    # plt.title(f"Contour with Major Dents (Dent Count: {major_dent_count})")
-    # plt.axis("equal")
-    # plt.legend()
-    # plt.show()
+    plt.title(f"Contour with Major Dents (Dent Count: {major_dent_count})")
+    plt.axis("equal")
+    plt.legend()
+    plt.show()
 
     return {
         'major_dent_count': major_dent_count,
         'perimeter_score': perimeter_score,
-        'final_jagged_score': final_jagged_score,  # Return final jagged score
         'segment_contour': segment,
         'smoothed_segment': np.vstack((xs_smooth, ys_smooth)).T,
         'green_segment': np.vstack((xs_green, ys_green)).T
@@ -179,4 +148,6 @@ def compute_and_plot_major_dents_concavity(image_path, r1=3, r2=3, A_max=64, sig
 
 # Run the final version with concavity-based dent detection on the green segment
 result = compute_and_plot_major_dents_concavity("tongue_output.jpg")
-print("Final Jagged score:", result['final_jagged_score'])
+# print("Major Dent Count based on Concavity:", result['major_dent_count'])
+# print("Perimeter Score:", result['perimeter_score']*10)
+print("Final Jagged score :",result['perimeter_score']*10+result['major_dent_count'])
