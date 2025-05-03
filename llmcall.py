@@ -24,14 +24,15 @@ def generate_summary(data):
         return {"reply": f"Input is too long. Please keep the input under {MAX_INPUT_LENGTH} characters."}
 
     # Formulate the input message for summarization
-    user_message = f"Jaggedness: {jaggedness}, Cracks: {cracks}, Redness: {redness}, Segmented Image: {segmented_image_path}, White Coating: {white_coating}, Papillae Analysis: {papillae_analysis}. Based on this, suggest possible tongue-related diseases and provide a summary."
+    user_message = (
+    f"Jaggedness: {jaggedness}, Cracks: {cracks}, Redness: {redness}, "
+    f"Segmented Image: {segmented_image_path}, White Coating: {white_coating}, "
+    f"Papillae Analysis: {papillae_analysis}. "
+    "Provide a direct answer with possible tongue-related diseases and a brief summary in under 100 words. "
+    "Do not provide explanations, only the answer and summary."
+        )
 
     # Disclaimer about model usage
-    disclaimer_message = (
-        "Disclaimer: The input text should be concise and clear. Avoid overly long or complicated messages. "
-        "This model generates responses based on statistical patterns in data, and the results should not be considered professional medical advice. "
-        "Always consult a healthcare professional for diagnosis and treatment. The model is intended for informational purposes only."
-    )
 
     payload = {
         "contents": [{
@@ -50,7 +51,6 @@ def generate_summary(data):
         reply = data["candidates"][0]["content"]["parts"][0]["text"]
         return {
             "reply": reply,
-            "disclaimer": disclaimer_message
         }
 
     except requests.exceptions.RequestException as e:

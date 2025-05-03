@@ -354,9 +354,10 @@ async def analyze_tongue(file: UploadFile = File(...)):
             "papillae_analysis": papillae_results
         }
         summary = generate_summary(response)
+        print(summary)
         response = {
             "Jaggedness" : "25",
-            "Summary" : summary,
+            "Summary" : summary["reply"],
             "Cracks" : score_cracked,
             "redness" : redness,
             "segmented_image_path": segmented_path,
