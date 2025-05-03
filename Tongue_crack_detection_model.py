@@ -1,131 +1,157 @@
+import os
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
-import math
+from skimage.filters import frangi
+from skimage.morphology import skeletonize, erosion, disk
+from skimage import img_as_ubyte
+from skimage.exposure import rescale_intensity
+from scipy.ndimage import distance_transform_edt
+
+
+# --- Crack Metrics Calculation Functions ---
+def calculate_length(contour):
+    return cv2.arcLength(contour, True)
+
+def calculate_width(contour):
+    x, y, w, h = cv2.boundingRect(contour)
+    return w
+
+def calculate_score(num_cracks, total_length, avg_width, w1=1, w2=0.5, w3=0.7):
+    return w1 * num_cracks + w2 * total_length + w3 * avg_width
+
 
 def detect_tongue_cracks_advanced(image_path):
-    img = cv2.imread(image_path)
-    if img is None:
-        raise ValueError(f"Failed to load image at {image_path}")
-    
-    orig = img.copy()
-    step_images = {}
+    # Step 1: Load and resize image
+    image = cv2.imread(image_path)
+    if image is None:
+        print(f"Error reading {image_path}")
+        return
+    image = cv2.resize(image, (256, 256))
 
-    # Step 1: Grayscale
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    step_images['Grayscale'] = gray
+    # Step 2: Tongue segmentation using GrabCut
+    mask = np.zeros(image.shape[:2], np.uint8)
+    rect = (10, 10, 236, 236)
+    bgdModel = np.zeros((1, 65), np.float64)
+    fgdModel = np.zeros((1, 65), np.float64)
+    cv2.grabCut(image, mask, rect, bgdModel, fgdModel, 5, cv2.GC_INIT_WITH_RECT)
+    mask2 = np.where((mask == 2) | (mask == 0), 0, 1).astype('uint8')
+    segmented = image * mask2[:, :, np.newaxis]
 
-    # Step 2: CLAHE for contrast enhancement
+    # Step 3: Convert to grayscale
+    gray = cv2.cvtColor(segmented, cv2.COLOR_BGR2GRAY)
+
+    # Step 4: Erode the tongue mask to reduce edge effects
+    mask_eroded = erosion(mask2, disk(10))
+    gray_eroded = gray.copy()
+    gray_eroded[mask_eroded == 0] = 0
+
+    # Step 5: CLAHE
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    enhanced = clahe.apply(gray)
-    step_images['CLAHE'] = enhanced
+    enhanced = clahe.apply(gray_eroded)
 
-    # # Step 3: Gaussian Blur
-    # blurred = cv2.GaussianBlur(enhanced, (0,0), 0)
-    # step_images['Blurred'] = blurred
+    # Step 6: Blur
+    blurred = cv2.GaussianBlur(enhanced, (15, 15), 0)
 
-    # Step 4: Morphological Closing (connect gaps in cracks)
-    kernel = np.ones((3, 3), np.uint8)
-    morph = cv2.morphologyEx(enhanced, cv2.MORPH_CLOSE, kernel, iterations=2)
-    step_images['Morph Closed'] = morph
+    # Step 7: Frangi
+    frangi_output = frangi(blurred)
+    frangi_scaled = rescale_intensity(frangi_output, out_range=(0, 255)).astype(np.uint8)
 
-    # Step 5: Edge Detection
-    edges = cv2.Canny(morph, 30, 100)
-    step_images['Canny Edges'] = edges
+    # Step 8: Threshold
+    _, binary = cv2.threshold(frangi_scaled, 30, 255, cv2.THRESH_BINARY)
 
-    # Step 6: Hough Line Transform
-    lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=25,
-                            minLineLength=20, maxLineGap=5)
+    # --- Boundary Removal with Distance Transform ---
+    distance = distance_transform_edt(mask2)
+    safe_mask = (distance > 15).astype(np.uint8)  # Exclude anything within 15 pixels of the boundary
 
-    crack_img = orig.copy()
+    # Apply safe mask early (to binary image to preserve crack width)
+    binary_no_boundary = cv2.bitwise_and(binary, binary, mask=safe_mask)
+
+    # Step 9: Morphology
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    morph = cv2.morphologyEx(binary_no_boundary, cv2.MORPH_CLOSE, kernel, iterations=2)
+
+    # Step 10: Skeletonize
+    skeleton = skeletonize(morph > 0)
+    skeleton_img = img_as_ubyte(skeleton)
+
+    # Step 11: Final midline within safe mask
+    final_midline = cv2.bitwise_and(skeleton_img, skeleton_img, mask=safe_mask.astype(np.uint8))
+
+    # Step 12: Crack Analysis
+    contours, _ = cv2.findContours(morph, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    num_cracks = 0
     total_length = 0
-    valid_cracks = 0
-    longest = 0
+    total_width = 0
+    min_contour_area = 5
 
-    angles = []
-    vertical_lines = []
+    contour_display = cv2.cvtColor(morph, cv2.COLOR_GRAY2BGR)
 
-    if lines is not None:
-        for line in lines:
-            x1, y1, x2, y2 = line[0]
-            dx, dy = x2 - x1, y2 - y1
-            length = np.sqrt(dx ** 2 + dy ** 2)
-            angle = np.degrees(np.arctan2(dy, dx))
+    for contour in contours:
+        if cv2.contourArea(contour) > min_contour_area:
+            num_cracks += 1
+            total_length += calculate_length(contour)
+            total_width += calculate_width(contour)
+            cv2.drawContours(contour_display, [contour], -1, (0, 255, 0), 1)
 
-            # Filter nearly horizontal lines (not likely to be cracks)
-            if abs(angle) < 20 or abs(angle) > 160:
-                continue
+    avg_width = total_width / num_cracks if num_cracks > 0 else 0
 
-            # Filter out small noise lines
-            if length < 20:
-                continue
-
-            # Valid crack
-            vertical_lines.append(((x1, y1), (x2, y2)))
-            total_length += length
-            longest = max(longest, length)
-            valid_cracks += 1
-            angles.append(angle)
-            cv2.line(crack_img, (x1, y1), (x2, y2), (0, 0, 255), 2)
-
-    # Step 7: Scoring from 0 to 10 (normalized)
-    max_cracks = 800
-    max_length = 25000
-    crack_score_weight = 0.6
-    length_score_weight = 0.4
-
-    alpha = 0.8   # weight for number of cracks
-    beta = 0.0015  # weight for total length
-
-# Normalize each part to 0–1
-    crack_score = min(valid_cracks, max_cracks) / max_cracks
-    length_score = min(total_length, max_length) / max_length
-
-    # Weighted sum
-    score_raw = (crack_score_weight * crack_score +
-                length_score_weight * length_score)
-
-    # Scale to 0–10
-    score = round(score_raw * 10, 2)
+    score = calculate_score(num_cracks, total_length, avg_width)
+    score = score/100 
+    score = min(10, max(0, score))  # Ensure score is between 0 and 10
+    score = round(score, 2)
+    # Output
+    print(f"Number of Cracks: {num_cracks}")
+    print(f"Total Length of Cracks: {total_length:.2f}")
+    print(f"Average Width of Cracks: {avg_width:.2f}")
+    print(f"Crack Severity Score: {score}")
+    # call visualization function
+    visualization(segmented, gray_eroded, morph, final_midline, contour_display)
+    return morph, score
 
 
+def visualization(segmented, gray_eroded, morph, final_midline, contour_display):
+    plt.figure(figsize=(15, 8))
 
-    # Convert for matplotlib
-    step_images['Final Result'] = cv2.cvtColor(crack_img, cv2.COLOR_BGR2RGB)
+    plt.subplot(2, 3, 1)
+    plt.title("Segmented Tongue")
+    plt.imshow(cv2.cvtColor(segmented, cv2.COLOR_BGR2RGB))
+    plt.axis("off")
 
-    crack_info = {
-        "crack_count": valid_cracks,
-        "total_length": round(total_length, 2),
-        "longest_crack": round(longest, 2),
-        "score": score,
-        "avg_angle": round(np.mean(angles), 2) if angles else None
-    }
-    
-    return step_images['Final Result'], crack_info['score']
+    plt.subplot(2, 3, 2)
+    plt.title("Eroded Input")
+    plt.imshow(gray_eroded, cmap='gray')
+    plt.axis("off")
 
+    plt.subplot(2, 3, 3)
+    plt.title("Morph After Boundary Removal")
+    plt.imshow(morph, cmap='gray')
+    plt.axis("off")
 
-def show_processing_steps(step_images, crack_info):
-    n = len(step_images)
-    plt.figure(figsize=(18, 4))
-    for i, (title, image) in enumerate(step_images.items()):
-        plt.subplot(1, n, i + 1)
-        cmap = 'gray' if len(image.shape) == 2 else None
-        plt.imshow(image, cmap=cmap)
-        plt.title(title)
-        plt.axis('off')
-    plt.suptitle(f"Score: {crack_info['score']} | Cracks: {crack_info['crack_count']} | Total Length: {crack_info['total_length']} px", fontsize=14)
+    plt.subplot(2, 3, 4)
+    plt.title("Final Midline")
+    plt.imshow(final_midline, cmap='gray')
+    plt.axis("off")
+
+    plt.subplot(2, 3, 5)
+    plt.title("Detected Crack Contours")
+    plt.imshow(cv2.cvtColor(contour_display, cv2.COLOR_BGR2RGB))
+    plt.axis("off")
+
     plt.tight_layout()
     plt.show()
 
 
-# MAIN USAGE
-if __name__ == "__main__":
-    for i in range(8, 9):
-        # image_path = f"test{i}.jpg"
-        image_path = f"test5.jpg"  # Replace with your tongue image path
-        print(f"Processing {image_path}...")
-        # image_path = "test1.jpg"  # Replace with your tongue image path
-    # image_path = "test2.jpg"  # Replace with your tongue image path
-        steps, info = detect_tongue_cracks_advanced(image_path)
-        print("Crack Analysis:", info)
-        show_processing_steps(steps, info)
+
+# --- Run on Single Image for Now ---
+for i in range(13,14):
+    # image_path = f"test{i}.jpg"  # Replace with your image path
+    image_path = f"images.jpeg"  # Replace with your image path
+    print(f"Processing {image_path}...")
+    results,score = detect_tongue_cracks_advanced(image_path)
+    print("Crack Severity Score:", score)
+    # Save the results if needed
+    # output_path = f"output_{i}.png"
+    # cv2.imwrite(output_path, results)
+    # print(f"Results saved to {output_path}")
