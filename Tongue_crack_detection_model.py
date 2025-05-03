@@ -7,7 +7,9 @@ from skimage.morphology import skeletonize, erosion, disk
 from skimage import img_as_ubyte
 from skimage.exposure import rescale_intensity
 from scipy.ndimage import distance_transform_edt
+import uuid
 
+OUTPUT_DIR = "output"
 
 # --- Crack Metrics Calculation Functions ---
 def calculate_length(contour):
@@ -107,8 +109,11 @@ def detect_tongue_cracks_advanced(image_path):
     print(f"Average Width of Cracks: {avg_width:.2f}")
     print(f"Crack Severity Score: {score}")
     # call visualization function
-    visualization(segmented, gray_eroded, morph, final_midline, contour_display)
-    return morph, score
+    morph_path = os.path.join(OUTPUT_DIR, f"cracks_morph_{uuid.uuid4()}.png")
+    cv2.imwrite(morph_path, morph)  
+    # visualization(segmented, gray_eroded, morph, final_midline, contour_display)
+    return {"morph": morph_path, "score": score}
+
 
 
 def visualization(segmented, gray_eroded, morph, final_midline, contour_display):

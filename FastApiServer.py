@@ -19,7 +19,7 @@ import time
 from Tongue_crack_detection_model import detect_tongue_cracks_advanced
 # Import the TonguePapillaeAnalyzer class
 from tongue_papillae_analyzer import TonguePapillaeAnalyzer
-
+from llmcall import generate_summary
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
@@ -342,18 +342,27 @@ async def analyze_tongue(file: UploadFile = File(...)):
         
         # Step 4: Analyze papillae (using the original saved file)
         papillae_results = analyze_papillae(segmented_path)
-        
-        imagecracked,score_cracked = detect_tongue_cracks_advanced(segmented_path)
+        redness = papillae_results["avg_redness"]*10
+        score_cracked = detect_tongue_cracks_advanced(segmented_path)
         # Prepare response
         response = {
             "Jaggedness" : "25",
-            "Cracks" : str(score_cracked*10),
-            "redness" : "75",
+            "Cracks" : score_cracked,
+            "redness" : redness,
             "segmented_image_path": segmented_path,
             "white_coating": coating_results,
             "papillae_analysis": papillae_results
         }
-        
+        summary = generate_summary(response)
+        response = {
+            "Jaggedness" : "25",
+            "Summary" : summary,
+            "Cracks" : score_cracked,
+            "redness" : redness,
+            "segmented_image_path": segmented_path,
+            "white_coating": coating_results,
+            "papillae_analysis": papillae_results
+        }
         logger.info(f"Analysis completed seconds")
         return JSONResponse(content=response)
     
