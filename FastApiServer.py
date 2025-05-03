@@ -354,11 +354,15 @@ async def analyze_tongue(file: UploadFile = File(...)):
             "papillae_analysis": papillae_results
         }
         summary = generate_summary(response)
-        print(summary)
+        Nutrition_Score = round(( (10 - coating_results["white_coating_percentage"]) * 0.4 + papillae_results["avg_size"] * 0.3 +  papillae_results["avg_redness"]* 0.3 ), 2)
+        Mantle_Score = (10 - score_cracked["score"])*0.5 + (10-5)*0.5     
+        # Mantle_Score = 45
         response = {
             "Jaggedness" : "25",
             "Summary" : summary["reply"],
             "Cracks" : score_cracked,
+            "NutritionScore" : Nutrition_Score,
+            "MantleScore" : Mantle_Score,
             "redness" : redness,
             "segmented_image_path": segmented_path,
             "white_coating": coating_results,
