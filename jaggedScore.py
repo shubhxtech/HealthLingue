@@ -138,12 +138,12 @@ def compute_and_plot_major_dents_concavity(image_path, r1=3, r2=3, A_max=64, sig
 # Run the final version with concavity-based dent detection on the green segment
 def jagged_tongue(image_path):
     result = compute_and_plot_major_dents_concavity(image_path)
-    score = result['perimeter_score'] * 10 + result['major_dent_count']
+    score = result['perimeter_score'] * 10 + min(result['major_dent_count'],8)
     # Save jagged visualization
     jagged_viz_path = os.path.join(OUTPUT_DIR, f"jagged_{uuid.uuid4()}.jpg")
     cv2.imwrite(jagged_viz_path, result['jagged_image'])
     return {'image_path': jagged_viz_path, 'score': score}
 
 # Example usage
-result = compute_and_plot_major_dents_concavity("tongue_output.jpg")
-print("Final Jagged score:", result['perimeter_score'] * 10 + result['major_dent_count'])
+# result = compute_and_plot_major_dents_concavity("tongue_output.jpg")
+# print("Final Jagged score:", result['perimeter_score'] * 10 + result['major_dent_count'])
