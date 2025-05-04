@@ -175,14 +175,4 @@ def visualization(segmented, gray_eroded, morph, final_midline, contour_display,
     plt.show()
 
 
-# --- Run on Single Image for Now ---
-for i in range(13, 14):
-    image_path = f"images/test3.jpg"  # Replace with your image path
-    print(f"Processing {image_path}...")
-    results, score = work(image_path)
-    print("Crack Severity Score:", score)
-
-    # Save the results if needed
-    # output_path = f"output_{i}.png"
-    # cv2.imwrite(output_path, results)
     # print(f"Results saved to {output_path}")
