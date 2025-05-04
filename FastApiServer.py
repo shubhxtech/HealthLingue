@@ -18,12 +18,8 @@ import logging
 import time
 from Tongue_crack_detection_model import detect_tongue_cracks_advanced
 # Import the TonguePapillaeAnalyzer class
-from jaggedScore import jagged_tongue
 from tongue_papillae_analyzer import TonguePapillaeAnalyzer
 from llmcall import generate_summary
-import requests
-from fastapi import FastAPI, Request, HTTPException
-
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
@@ -312,57 +308,6 @@ def analyze_papillae(image_path: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error in papillae analysis: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Papillae analysis failed: {str(e)}")
-    
-API_KEY = "AIzaSyBWb5O_8-tYNazvqOAjBWdcqmU--JF-EAg"
-GEMINI_ENDPOINT = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={API_KEY}"
-
-@app.post("/chat")
-async def chat(request: Request):
-    """Handle chat messages"""
-    try:
-        data = await request.json()
-        user_message = data.get("message", "").strip()
-        if not user_message:
-            raise HTTPException(status_code=400, detail="Please enter a message.")
-
-        logger.info(f"Received message: {user_message[:30]}...")
-
-        payload = {
-            "contents": [{
-                "parts": [{"text": user_message}]
-            }],
-            "generationConfig": {
-                "temperature": 0.7,
-                "topK": 40,
-                "topP": 0.95,
-                "maxOutputTokens": 1024,
-            }
-        }
-
-        headers = {"Content-Type": "application/json"}
-
-        # Call Gemini API
-        response = requests.post(GEMINI_ENDPOINT, headers=headers, json=payload)
-        response.raise_for_status()
-        response_data = response.json()
-
-        try:
-            reply = response_data["candidates"][0]["content"]["parts"][0]["text"]
-            logger.info(f"Generated response: {reply[:30]}...")
-            return {"reply": reply}
-        except (KeyError, IndexError) as e:
-            logger.error(f"Error parsing API response: {e}")
-            logger.error(f"Response data: {response_data}")
-            raise HTTPException(status_code=500, detail="Error parsing API response")
-
-    except requests.exceptions.RequestException as e:
-        logger.error(f"API request error: {e}")
-        raise HTTPException(status_code=502, detail=f"API Error: {str(e)}")
-
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
-    
 
 @app.post("/analyze_tongue", response_class=JSONResponse)
 async def analyze_tongue(file: UploadFile = File(...)):
@@ -399,9 +344,7 @@ async def analyze_tongue(file: UploadFile = File(...)):
         papillae_results = analyze_papillae(segmented_path)
         redness = papillae_results["avg_redness"]*10
         result_cracked = detect_tongue_cracks_advanced(segmented_path)
-        morphed = os.path.join(OUTPUT_DIR, f"coating_{uuid.uuid4()}.jpg")
-        cv2.imwrite(morphed, result_cracked["overlay"])
-        score_cracked = {"morph": morphed, "score": result_cracked["score"]}
+        score_cracked = {"morph": result_cracked["overlay"], "score": result_cracked["score"]}
         # Prepare response
         # score_cracked = {result_cracked["score"]
         response = {
@@ -413,23 +356,21 @@ async def analyze_tongue(file: UploadFile = File(...)):
             "papillae_analysis": papillae_results
         }
         summary = generate_summary(response)
-        Nutrition_Score = round(( (10 - coating_results["white_coating_percentage"]/7) * 0.4 + papillae_results["avg_size"] * 0.3 +  papillae_results["avg_redness"]* 0.3 ), 2)
-        Mantle_Score = (10 - score_cracked["score"]/10)*0.5 + (10-5)*0.5     
+        Nutrition_Score = round(( (10 - coating_results["white_coating_percentage"]) * 0.4 + papillae_results["avg_size"] * 0.3 +  papillae_results["avg_redness"]* 0.3 ), 2)
+        Mantle_Score = (10 - score_cracked["score"])*0.5 + (10-5)*0.5     
         # Mantle_Score = 45
-        jagged_Score = jagged_tongue(segmented_path)
         response = {
-            "Jaggedness" : jagged_Score["score"]*10,
+            "Jaggedness" : "25",
             "Summary" : summary["reply"],
             "Cracks" : score_cracked,
-            "NutritionScore" : Nutrition_Score*10,
-            "MantleScore" : Mantle_Score*10,
+            "NutritionScore" : Nutrition_Score,
+            "MantleScore" : Mantle_Score,
             "redness" : redness,
             "segmented_image_path": segmented_path,
             "white_coating": coating_results,
             "papillae_analysis": papillae_results
         }
         logger.info(f"Analysis completed seconds")
-        print(response)
         return JSONResponse(content=response)
     
     except HTTPException as http_exc:
